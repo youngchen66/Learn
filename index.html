@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>中英單字連線遊戲</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 40px;
+    }
+    .container {
+      display: flex;
+      justify-content: space-around;
+      margin-top: 30px;
+    }
+    .column {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .item {
+      padding: 10px;
+      background-color: #f0f0f0;
+      border: 1px solid #ccc;
+      cursor: pointer;
+      border-radius: 8px;
+      transition: background 0.3s;
+    }
+    .item:hover {
+      background-color: #d0f0d0;
+    }
+    .matched {
+      background-color: #b2f2bb;
+      pointer-events: none;
+    }
+    #message {
+      margin-top: 20px;
+      font-size: 20px;
+      color: red;
+    }
+    #scoreboard, #timer {
+      margin-top: 20px;
+      font-size: 18px;
+    }
+    #image-preview {
+      margin-top: 20px;
+      height: 150px;
+    }
+    #image-preview img {
+      max-height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <h1>中英單字連線遊戲</h1>
+  <p>請點選一個中文，再點選對應的英文單字</p>
+
+  <input type="file" id="excelFile" accept=".xlsx" />
+
+  <div id="scoreboard">得分：0 / 0</div>
+  <div id="timer">剩餘時間：60 秒</div>
+
+  <div id="image-preview"></div>
+
+  <div class="container">
+    <div class="column" id="chinese-column"></div>
+    <div class="column" id="english-column"></div>
+  </div>
+
+  <div id="message"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+  <script>
+    let wordPairs = [];
+
+    function shuffle(array) {
+      return array.sort(() => Math.random() - 0.5);
+    }
+
+    const chineseCol = document.getElementById("chinese-column");
+    const englishCol = document.getElementById("english-column");
+    const messageDiv = document.getElementById("message");
+    const scoreBoard = document.getElementById("scoreboard");
+    const timerDisplay = document.getElementById("timer");
+    const imagePreview = document.getElementById("image-preview");
+
+    let selectedZh = null;
+    let score = 0;
+    let total = 0;
+    let timeLeft = 60;
+    let timer;
+
+    function speak(text) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'en-US';
+      speechSynthesis.speak(utterance);
+    }
+
+    function updateScore() {
+      scoreBoard.textContent = `得分：${score} / ${total}`;
+    }
+
+    function startTimer() {
+      timeLeft = 60;
+      timerDisplay.textContent = `剩餘時間：${timeLeft} 秒`;
+      timer = setInterval(() => {
+        timeLeft--;
+        timerDisplay.textContent = `剩餘時間：${timeLeft} 秒`;
+        if (timeLeft <= 0) {
+          clearInterval(timer);
+          messageDiv.textContent = "時間到！遊戲結束！";
+          messageDiv.style.color = "red";
+          document.querySelectorAll('.item').forEach(item => item.style.pointerEvents = 'none');
+        }
+      }, 1000);
+    }
+
+    function showImage(keyword) {
+      // 圖片網址可依需求改成你自己的 CDN 或圖片目錄
+      const imageUrl = `https://source.unsplash.com/featured/?${encodeURIComponent(keyword)}`;
+      imagePreview.innerHTML = `<img src="${imageUrl}" alt="${keyword}" />`;
+    }
+
+    function initGame() {
+      chineseCol.innerHTML = '';
+      englishCol.innerHTML = '';
+      score = 0;
+      total = wordPairs.length;
+      const zhList = shuffle([...wordPairs]);
+      const enList = shuffle([...wordPairs]);
+
+      zhList.forEach(pair => {
+        const div = document.createElement("div");
+        div.className = "item zh";
+        div.textContent = pair.zh;
+        div.dataset.zh = pair.zh;
+        div.dataset.image = pair.en;
+        chineseCol.appendChild(div);
+      });
+
+      enList.forEach(pair => {
+        const div = document.createElement("div");
+        div.className = "item en";
+        div.textContent = pair.en;
+        div.dataset.en = pair.en;
+        englishCol.appendChild(div);
+      });
+
+      updateScore();
+      startTimer();
+    }
+
+    document.addEventListener("click", function(e) {
+      if (e.target.classList.contains("zh")) {
+        selectedZh = e.target;
+        messageDiv.textContent = "請選擇對應的英文單字";
+        messageDiv.style.color = "black";
+        showImage(e.target.dataset.image);
+      } else if (e.target.classList.contains("en") && selectedZh) {
+        const zhWord = selectedZh.dataset.zh;
+        const enWord = e.target.dataset.en;
+
+        const correctPair = wordPairs.find(p => p.zh === zhWord);
+        if (correctPair && correctPair.en === enWord) {
+          selectedZh.classList.add("matched");
+          e.target.classList.add("matched");
+          speak(enWord);
+          score++;
+          updateScore();
+          messageDiv.textContent = "✔ 配對正確！";
+          messageDiv.style.color = "green";
+          if (score === total) {
+            clearInterval(timer);
+            messageDiv.textContent = "🎉 恭喜完成所有配對！";
+          }
+        } else {
+          messageDiv.textContent = "❌ 錯誤配對，請再試一次。";
+          messageDiv.style.color = "red";
+        }
+        selectedZh = null;
+      }
+    });
+
+    document.getElementById('excelFile').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, {type: 'array'});
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet);
+        wordPairs = json.map(row => ({ zh: row['中文'], en: row['英文'] }));
+        initGame();
+      };
+      reader.readAsArrayBuffer(file);
+    });
+  </script>
+</body>
+</html>
